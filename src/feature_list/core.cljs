@@ -9,21 +9,6 @@
 
 (enable-console-print!)
 
-;; -------------------------
-;; Communication to server
-;; -------------------------
-
-(go (def ws (<! (ws-ch "ws://localhost:3000/ws"))))
-
-;; -------------------------
-;;  Application state model
-;; -------------------------
-(def app-state
-  (atom
-   {:ws ws
-    :features
-    [{:title "Cable Sizes" :description "We like cable sizes" :votes 0}
-     {:title "Holiday" :description "We want better holiday support" :votes 0}]}))
 
 ;; -------------------------
 ;;       Helpers
@@ -55,7 +40,6 @@
   "Create a react/om component that will display a single feature"
   [feature owner]
   (reify
-
     om/IRenderState
     (render-state [this {:keys [vote]}]
       (dom/li nil
@@ -68,7 +52,6 @@
   a text box to add new features"
   [app owner]
   (reify
-
     om/IInitState
     (init-state [_]
       {:vote (chan)
@@ -98,4 +81,11 @@
 ;; -------------------------
 ;;    Build the app
 ;; -------------------------
-(om/root app-state features-view (. js/document (getElementById "features")))
+
+(go (let [ws (<! (ws-ch "ws://localhost:3001/ws"))
+          app-state (atom
+                     {:ws ws
+                      :features
+                      [{:title "Cable Sizes" :description "We like cable sizes" :votes 0}
+                       {:title "Holiday" :description "We want better holiday support" :votes 0}]})]
+      (om/root app-state features-view (. js/document (getElementById "features")))))

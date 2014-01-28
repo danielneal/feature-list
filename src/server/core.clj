@@ -6,7 +6,8 @@
     [clojure.core.async :refer [<! >! put! close! go-loop]]
     [compojure.core :refer [defroutes GET routes]]
     [compojure.handler :refer [api]]
-    [compojure.route :refer [resources]]))
+    [compojure.route :refer [resources files]]
+    [datomic.api :as d :refer [q]]))
 
 (defn ws-handler [req]
   (with-channel req ws
@@ -17,16 +18,14 @@
         (recur)))))
 
 (defroutes app-routes
-  (GET "/" [] "Hello World!")
-  (GET "/biscuit" [] "Biscuits are great")
-  (GET "/cheese" [] "Chees is awesome")
   (GET "/ws" [] ws-handler)
-  (resources "/js" {:root "js"})
-  (resources "/out" {:root "out"}))
+  (files "/" {:root nil}))
 
 (def webapp
   (-> app-routes
       api))
 
-(def stop-server (run-server #'webapp {:port 3000}))
+(def stop-server (run-server #'webapp {:port 3001}))
+
+
 
