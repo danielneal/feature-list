@@ -23,14 +23,16 @@
   (let [new-feature (-> (om/get-node owner "new-feature")
                         .-value)]
     (when new-feature
-      (om/transact! app :features conj {:title new-feature :description "" :votes 0})
+      (om/transact! app :features conj {:title new-feature :description "" :votes 0 :my-vote false})
       (go (>! (:ws @app) {:message-type :new-feature :feature new-feature})))))
 
 (defn vote-for-feature
-  [feature owner]
-  (let [vote (om/get-state owner :vote)]
-    (om/transact! feature :votes inc)
-    (put! vote @feature)))
+  [vote feature]
+  (om/transact! feature (fn [x]
+                          (-> x
+                              (update-in [:votes] inc)
+                              (update-in [:my-vote] not))))
+  (put! vote @feature))
 
 ;; -------------------------
 ;;       Om Components
@@ -43,9 +45,10 @@
     om/IRenderState
     (render-state [this {:keys [vote]}]
       (dom/li nil
-        (dom/span nil (:title feature))
+        (dom/span #js {:onClick #(om/transact! feature :show-description not)} (:title feature))
         (dom/span nil (:votes feature))
-        (dom/button #js {:onClick #(vote-for-feature feature owner)} "Vote")))))
+        (when (:show-description feature) (dom/span nil (:description feature)))
+        (dom/button #js {:onClick #(vote-for-feature vote feature)} (if (:my-vote feature) "yes" "no"))))))
 
 (defn features-view
   "Create a react/om component that will display and manage a sorted list of features, with
@@ -86,6 +89,6 @@
           app-state (atom
                      {:ws ws
                       :features
-                      [{:title "Cable Sizes" :description "We like cable sizes" :votes 0}
-                       {:title "Holiday" :description "We want better holiday support" :votes 0}]})]
+                      [{:title "Cable Sizes" :description "We like cable sizes" :votes 0 :my-vote false}
+                       {:title "Holiday" :description "We want better holiday support" :votes 0 :my-vote false}]})]
       (om/root app-state features-view (. js/document (getElementById "features")))))
