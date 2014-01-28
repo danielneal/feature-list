@@ -9,83 +9,93 @@
 
 (enable-console-print!)
 
+;; -------------------------
+;; Communication to server
+;; -------------------------
 
-(defn middle-name [{:keys [middle middle-initial]}]
-  (cond
-    middle (str " " middle)
-    middle-initial (str " " middle-initial ".")))
+(go (def ws (<! (ws-ch "ws://localhost:3000/ws"))))
 
-(defn display-name [{:keys [first last] :as contact}]
-  (str last ", " first (middle-name contact)))
+;; -------------------------
+;;  Application state model
+;; -------------------------
+(def app-state
+  (atom
+   {:ws ws
+    :features
+    [{:title "Cable Sizes" :description "We like cable sizes" :votes 0}
+     {:title "Holiday" :description "We want better holiday support" :votes 0}]}))
 
-(defn parse-contact [contact-str]
-  (let [[first middle last :as parts] (string/split contact-str #"\s+")
-        [first last middle] (if (nil? last) [first middle] [first last middle])
-        middle (when middle (string/replace middle "." ""))
-        c (if middle (count middle) 0)]
-    (when (>= (reduce + (map #(if % 1 0) parts)) 2)
-      (cond-> {:first first :last last}
-        (== c 1) (assoc :middle-initial middle)
-        (>= c 2) (assoc :middle middle)))))
+;; -------------------------
+;;       Helpers
+;; -------------------------
 
-(defn handle-change [e owner {:keys [text]}]
-  (let [value (.. e -target -value)]
-    (if-not (re-find #"[0-9]" value)
-      (om/set-state! owner :text value)
-      (om/set-state! owner :text text))))
+(defn handle-change
+  [e owner {:keys [text]}]
+  (om/set-state! owner :text (.. e -target -value)))
 
-(defn add-contact [app owner]
-     (let [new-contact (-> (om/get-node owner "new-contact")
-                           .-value
-                           parse-contact)
-           ]
-       (when new-contact
-         (om/transact! app :contacts conj new-contact)
-         (go (>! (:ws @app) {:message "boom"})))))
+(defn add-feature
+  [app owner]
+  (let [new-feature (-> (om/get-node owner "new-feature")
+                        .-value)]
+    (when new-feature
+      (om/transact! app :features conj {:title new-feature :description "" :votes 0})
+      (go (>! (:ws @app) {:message-type :new-feature :feature new-feature})))))
 
-(defn contact-view [contact owner]
+(defn vote-for-feature
+  [feature owner]
+  (let [vote (om/get-state owner :vote)]
+    (om/transact! feature :votes inc)
+    (put! vote @feature)))
+
+;; -------------------------
+;;       Om Components
+;; -------------------------
+
+(defn feature-view
+  "Create a react/om component that will display a single feature"
+  [feature owner]
   (reify
+
     om/IRenderState
-    (render-state [this {:keys [delete]}]
+    (render-state [this {:keys [vote]}]
       (dom/li nil
-        (dom/span nil (display-name contact))
-        (dom/button #js {:onClick (fn [e] (put! delete @contact))} "Delete")))))
+        (dom/span nil (:title feature))
+        (dom/span nil (:votes feature))
+        (dom/button #js {:onClick #(vote-for-feature feature owner)} "Vote")))))
 
-(defn contacts-view [app owner]
+(defn features-view
+  "Create a react/om component that will display and manage a sorted list of features, with
+  a text box to add new features"
+  [app owner]
   (reify
+
     om/IInitState
     (init-state [_]
-      {:delete (chan)
+      {:vote (chan)
        :text ""})
+
     om/IWillMount
     (will-mount [_]
-      (let [delete (om/get-state owner :delete)]
+      (let [vote (om/get-state owner :vote)]
         (go (loop []
-              (let [contact (<! delete)]
-                (om/transact! app :contacts
-                  (fn [xs] (vec (remove #(= contact %) xs))))
+              (let [feature (<! vote)]
+                (om/transact! app :features
+                   (fn [xs] (vec (sort-by :votes (fn [a b] (> a b)) xs))))
+                (>! (:ws @app) {:message-type :vote :feature feature})
                 (recur))))))
+
     om/IRenderState
     (render-state [this state]
       (dom/div nil
-        (dom/h1 nil "Contact list")
+        (dom/h1 nil "Feature list")
         (apply dom/ul nil
-          (om/build-all contact-view (:contacts app)
+          (om/build-all feature-view (:features app)
             {:init-state state}))
         (dom/div nil
-                 (dom/input #js {:type "text" :ref "new-contact" :value (:text state) :onChange #(handle-change % owner state)})
-                 (dom/button #js {:onClick  #(add-contact app owner)} "Add contact"))))))
+                 (dom/input #js {:type "text" :ref "new-feature" :value (:text state) :onChange #(handle-change % owner state)})
+                 (dom/button #js {:onClick  #(add-feature app owner)} "Add feature"))))))
 
-(go (let [ws (<! (ws-ch "ws://localhost:3000/ws"))
-          app-state
-          (atom
-           {:ws ws
-            :contacts
-            [{:first "Ben" :last "Bitdiddle" :email "benb@mit.edu"}
-             {:first "Alyssa" :middle-initial "P" :last "Hacker" :email "aphacker@mit.edu"}
-             {:first "Eva" :middle "Lu" :last "Ator" :email "eval@mit.edu"}
-             {:first "Louis" :last "Reasoner" :email "prolog@mit.edu"}
-             {:first "Cy" :middle-initial "D" :last "Effect" :email "bugs@mit.edu"}
-             {:first "Lem" :middle-initial "E" :last "Tweakit" :email "morebugs@mit.edu"}]})]
-
-      (om/root app-state contacts-view (. js/document (getElementById "contacts")))))
+;; -------------------------
+;;    Build the app
+;; -------------------------
+(om/root app-state features-view (. js/document (getElementById "features")))
