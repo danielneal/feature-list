@@ -45,10 +45,10 @@
     om/IRenderState
     (render-state [this {:keys [vote]}]
       (dom/li nil
+        (dom/button #js {:className "pure-button button-small" :onClick #(vote-for-feature vote feature)} (if (:my-vote feature) "yes" "no"))
+        (dom/span #js {:className "number-of-votes"} (:votes feature))
         (dom/span #js {:onClick #(om/transact! feature :show-description not)} (:title feature))
-        (dom/span nil (:votes feature))
-        (when (:show-description feature) (dom/span nil (:description feature)))
-        (dom/button #js {:onClick #(vote-for-feature vote feature)} (if (:my-vote feature) "yes" "no"))))))
+        (when (:show-description feature) (dom/span #js {:className "description"} (:description feature)))))))
 
 (defn features-view
   "Create a react/om component that will display and manage a sorted list of features, with
@@ -79,7 +79,7 @@
             {:init-state state}))
         (dom/div nil
                  (dom/input #js {:type "text" :ref "new-feature" :value (:text state) :onChange #(handle-change % owner state)})
-                 (dom/button #js {:onClick  #(add-feature app owner)} "Add feature"))))))
+                 (dom/button #js {:className "pure-button button-small" :onClick  #(add-feature app owner)} "Add feature"))))))
 
 ;; -------------------------
 ;;    Build the app

@@ -1,0 +1,15 @@
+li {
+  list-style: none;
+}
+
+.button-small {
+  font-size: 75%;
+  margin:3px;
+}
+
+.number-of-votes {
+  font-size: 200%;
+  font-weight:bold;
+  margin:10px;
+}
+
