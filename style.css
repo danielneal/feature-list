@@ -31,7 +31,17 @@ li {
   margin:5px;
   cursor:pointer;
 }
+
 .feature .description {
   display:block;
   margin:5px;
+}
+
+form {
+  margin-left:40px;
+  padding:5px;
+}
+
+form input {
+  margin:3px;
 }

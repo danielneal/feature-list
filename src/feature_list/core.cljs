@@ -19,27 +19,26 @@
   (go (>! ws message)))
 
 ;; -------------------------
-;;       Helpers
+;;       Commands
 ;; -------------------------
-
-(defn handle-change
-  [e owner {:keys [text]}]
-  (om/set-state! owner :text (.. e -target -value)))
 
 (defn add-feature
   [app owner]
-  (let [new-feature (-> (om/get-node owner "new-feature")
-                        .-value)]
-    (when new-feature
-      (om/transact! app :features conj {:title new-feature :description "" :votes 0})
-      (om/set-state! owner :text "")
-      (send-message {:message-type :new-feature :feature new-feature}))))
-
+  (let [title (.-value (om/get-node owner "featuretitle"))
+        description (.-value (om/get-node owner "featuredescription"))]
+    (om/transact! app :features conj {:title title :description description :votes 0})
+    (om/set-state! owner :title "")
+    (om/set-state! owner :description "")
+    (send-message {:message-type :new-feature})))
 
 (defn vote-for-feature
   [feature]
   (om/transact! feature :votes inc)
   (send-message {:message-type :vote :feature @feature}))
+
+(defn handle-change
+  [e owner k]
+  (om/set-state! owner k (.. e -target -value)))
 
 ;; -------------------------
 ;;       Om Components
@@ -68,7 +67,8 @@
     om/IInitState
     (init-state [_]
       {:sort? (chan)
-       :text ""})
+       :title ""
+       :description ""})
 
     om/IWillMount
     (will-mount [_]
@@ -86,12 +86,13 @@
         (apply dom/ul nil
           (om/build-all feature-view (:features app)
             {:init-state state}))
-        (dom/div nil
-                 (dom/input #js {:type "text" :ref "new-feature" :value (:text state) :onChange #(handle-change % owner state)})
-                 (dom/button #js {:className "pure-button button-small" :onClick  #(add-feature app owner)} "Add feature"))))))
+        (dom/form #js {:className "pure-form"}
+                  (dom/input #js {:type "text" :placeholder "feature title" :ref "featuretitle" :value (:title state) :onChange #(handle-change % owner :title)})
+                  (dom/input #js {:type "text" :placeholder "feature description" :ref "featuredescription" :value (:description state) :onChange #(handle-change % owner :description)})
+                  (dom/button #js {:className "pure-button button-small" :onClick  (fn [e] (.preventDefault e) (add-feature app owner))} "Add feature"))))))
 
 ;; -------------------------
-;;    Build the app
+;;    Build the app 08001079639
 ;; -------------------------
 (def app-state (atom {:features
                       [{:title "Cable Sizes" :description "We like cable sizes" :votes 0}
