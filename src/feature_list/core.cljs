@@ -9,6 +9,14 @@
 
 (enable-console-print!)
 
+;; -------------------------
+;;     Messaging
+;; -------------------------
+
+(go (def ws (<! (ws-ch "ws://localhost:3001/ws"))))
+
+(defn send-message [message]
+  (go (>! ws message)))
 
 ;; -------------------------
 ;;       Helpers
@@ -24,15 +32,13 @@
                         .-value)]
     (when new-feature
       (om/transact! app :features conj {:title new-feature :description "" :votes 0 :my-vote false})
-      (go (>! (:ws @app) {:message-type :new-feature :feature new-feature})))))
+      (send-message {:message-type :new-feature :feature new-feature}))))
+
 
 (defn vote-for-feature
-  [vote feature]
-  (om/transact! feature (fn [x]
-                          (-> x
-                              (update-in [:votes] inc)
-                              (update-in [:my-vote] not))))
-  (put! vote @feature))
+  [feature]
+  (om/transact! feature :votes inc)
+  (send-message {:message-type :vote :feature feature}))
 
 ;; -------------------------
 ;;       Om Components
@@ -43,9 +49,9 @@
   [feature owner]
   (reify
     om/IRenderState
-    (render-state [this {:keys [vote]}]
+    (render-state [this {:keys [sort?]}]
       (dom/li nil
-        (dom/button #js {:className "pure-button button-small" :onClick #(vote-for-feature vote feature)} (if (:my-vote feature) "yes" "no"))
+        (dom/button #js {:className "pure-button button-small" :onClick #(do (vote-for-feature feature) (put! sort? true))} "Vote")
         (dom/span #js {:className "number-of-votes"} (:votes feature))
         (dom/span #js {:onClick #(om/transact! feature :show-description not)} (:title feature))
         (when (:show-description feature) (dom/span #js {:className "description"} (:description feature)))))))
@@ -57,17 +63,16 @@
   (reify
     om/IInitState
     (init-state [_]
-      {:vote (chan)
+      {:sort? (chan)
        :text ""})
 
     om/IWillMount
     (will-mount [_]
-      (let [vote (om/get-state owner :vote)]
+      (let [sort? (om/get-state owner :sort?)]
         (go (loop []
-              (let [feature (<! vote)]
+              (let [_ (<! sort?)]
                 (om/transact! app :features
                    (fn [xs] (vec (sort-by :votes (fn [a b] (> a b)) xs))))
-                (>! (:ws @app) {:message-type :vote :feature feature})
                 (recur))))))
 
     om/IRenderState
@@ -84,11 +89,9 @@
 ;; -------------------------
 ;;    Build the app
 ;; -------------------------
+(def app-state (atom {:features
+                      [{:title "Cable Sizes" :description "We like cable sizes" :votes 0}
+                       {:title "Holiday" :description "We want better holiday support" :votes 0}]}))
 
-(go (let [ws (<! (ws-ch "ws://localhost:3001/ws"))
-          app-state (atom
-                     {:ws ws
-                      :features
-                      [{:title "Cable Sizes" :description "We like cable sizes" :votes 0 :my-vote false}
-                       {:title "Holiday" :description "We want better holiday support" :votes 0 :my-vote false}]})]
-      (om/root app-state features-view (. js/document (getElementById "features")))))
+(om/root app-state features-view (. js/document (getElementById "features")))
+
