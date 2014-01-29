@@ -3,7 +3,7 @@
   (:require [om.core :as om :include-macros true]
             [om.dom :as dom :include-macros true]
             [chord.client :refer [ws-ch]]
-            [cljs.core.async :refer [put! chan <! >!]]
+            [cljs.core.async :refer [put! chan <! >! <!! >!!]]
             [clojure.data :as data]
             [clojure.string :as string]))
 
@@ -13,7 +13,7 @@
 ;;     Messaging
 ;; -------------------------
 
-(go (def ws (<! (ws-ch "ws://localhost:3001/ws"))))
+(go (def ws (<! (ws-ch "ws://localhost:3000/ws"))))
 
 (defn send-message [message]
   (go (>! ws message)))
@@ -31,14 +31,15 @@
   (let [new-feature (-> (om/get-node owner "new-feature")
                         .-value)]
     (when new-feature
-      (om/transact! app :features conj {:title new-feature :description "" :votes 0 :my-vote false})
+      (om/transact! app :features conj {:title new-feature :description "" :votes 0})
+      (om/set-state! owner :text "")
       (send-message {:message-type :new-feature :feature new-feature}))))
 
 
 (defn vote-for-feature
   [feature]
   (om/transact! feature :votes inc)
-  (send-message {:message-type :vote :feature feature}))
+  (send-message {:message-type :vote :feature @feature}))
 
 ;; -------------------------
 ;;       Om Components
@@ -50,11 +51,14 @@
   (reify
     om/IRenderState
     (render-state [this {:keys [sort?]}]
+      (letfn [(toggle-description [] (om/transact! feature :show-description not))]
       (dom/li nil
         (dom/button #js {:className "pure-button button-small" :onClick #(do (vote-for-feature feature) (put! sort? true))} "Vote")
         (dom/span #js {:className "number-of-votes"} (:votes feature))
-        (dom/span #js {:onClick #(om/transact! feature :show-description not)} (:title feature))
-        (when (:show-description feature) (dom/span #js {:className "description"} (:description feature)))))))
+        (dom/div #js {:className "feature"}
+                 (dom/i #js {:className (str "expand fa " (if (:show-description feature) "fa-caret-down" "fa-caret-right")) :onClick toggle-description})
+                 (dom/span #js {:className "title" :onClick toggle-description} (:title feature))
+                 (when (:show-description feature) (dom/span #js {:className "description"} (:description feature)))))))))
 
 (defn features-view
   "Create a react/om component that will display and manage a sorted list of features, with
