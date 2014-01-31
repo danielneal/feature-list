@@ -2,6 +2,10 @@ li {
   list-style: none;
 }
 
+.page-container {
+  width:600px;
+  margin:auto;
+}
 .button-small {
   font-size: 75%;
   margin:5px;
@@ -38,7 +42,6 @@ li {
 }
 
 form {
-  margin-left:40px;
   padding:5px;
 }
 

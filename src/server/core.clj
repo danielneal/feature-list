@@ -17,12 +17,13 @@
 (d/create-database uri)
 (def conn (d/connect uri))
 (d/transact conn (-> "schema.edn" slurp read-string))
-;(d/transact conn [{:feature/title "hello" :feature/votes 3 :db/id (d/tempid :db.part/user)}])
 
-(q '[:find ?f ?v
-     :in $
-     :where [?e :feature/title ?f]
-            [?e :feature/votes ?v]] (d/db conn))
+(comment (d/transact conn [{:feature/title "hello" :feature/votes 3 :db/id (d/tempid :db.part/user)}])
+
+  (q '[:find ?f ?v
+       :in $
+       :where [?e :feature/title ?f]
+       [?e :feature/votes ?v]] (d/db conn)))
 
 ;; -------------------------------
 ;;     Message handling
@@ -30,10 +31,10 @@
 (defmulti process-message :message-type)
 
 (defmethod process-message :new-feature [message]
-  (println (str "Feature: " (:feature message))))
+  (println "New feature"))
 
 (defmethod process-message :vote [feature]
-  (println "vote"))
+  (println "Vote for feature"))
 
 (defmethod process-message :default [msg]
   (println msg))

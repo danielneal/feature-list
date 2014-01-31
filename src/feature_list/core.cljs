@@ -27,14 +27,14 @@
   (let [title (.-value (om/get-node owner "featuretitle"))
         description (.-value (om/get-node owner "featuredescription"))]
     (om/transact! app :features conj {:title title :description description :votes 0})
+    (send-message {:message-type :add-feature :feature {:title title :description description :votes 0}})
     (om/set-state! owner :title "")
-    (om/set-state! owner :description "")
-    (send-message {:message-type :new-feature})))
+    (om/set-state! owner :description "")))
 
 (defn vote-for-feature
   [feature]
-  (om/transact! feature :votes inc)
-  (send-message {:message-type :vote :feature @feature}))
+  (send-message {:message-type :vote :feature @feature})
+  (om/transact! feature :votes inc))
 
 (defn handle-change
   [e owner k]
@@ -48,16 +48,19 @@
   "Create a react/om component that will display a single feature"
   [feature owner]
   (reify
+    om/IInitState
+    (init-state [_]
+                {:expanded false})
     om/IRenderState
-    (render-state [this {:keys [sort?]}]
-      (letfn [(toggle-description [] (om/transact! feature :show-description not))]
+    (render-state [this {:keys [sort? expanded]}]
+      (letfn [(toggle-description [] (om/set-state! owner :expanded (not expanded)))]
       (dom/li nil
         (dom/button #js {:className "pure-button button-small" :onClick #(do (vote-for-feature feature) (put! sort? true))} "Vote")
         (dom/span #js {:className "number-of-votes"} (:votes feature))
         (dom/div #js {:className "feature"}
-                 (dom/i #js {:className (str "expand fa " (if (:show-description feature) "fa-caret-down" "fa-caret-right")) :onClick toggle-description})
+                 (dom/i #js {:className (str "expand fa " (if expanded "fa-caret-down" "fa-caret-right")) :onClick toggle-description})
                  (dom/span #js {:className "title" :onClick toggle-description} (:title feature))
-                 (when (:show-description feature) (dom/span #js {:className "description"} (:description feature)))))))))
+                 (when expanded (dom/span #js {:className "description"} (:description feature)))))))))
 
 (defn features-view
   "Create a react/om component that will display and manage a sorted list of features, with
@@ -81,7 +84,7 @@
 
     om/IRenderState
     (render-state [this state]
-      (dom/div nil
+      (dom/div #js {:className "page-container"}
         (dom/h1 nil "Feature list")
         (apply dom/ul nil
           (om/build-all feature-view (:features app)
