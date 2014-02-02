@@ -52,10 +52,10 @@
     (init-state [_]
                 {:expanded false})
     om/IRenderState
-    (render-state [this {:keys [sort? expanded]}]
+    (render-state [this {:keys [vote expanded]}]
       (letfn [(toggle-description [] (om/set-state! owner :expanded (not expanded)))]
       (dom/li nil
-        (dom/button #js {:className "pure-button button-small" :onClick #(do (vote-for-feature feature) (put! sort? true))} "Vote")
+        (dom/button #js {:className "pure-button button-small" :onClick #(do (vote-for-feature feature owner) (put! vote feature))} "Vote")
         (dom/span #js {:className "number-of-votes"} (:votes feature))
         (dom/div #js {:className "feature"}
                  (dom/i #js {:className (str "expand fa " (if expanded "fa-caret-down" "fa-caret-right")) :onClick toggle-description})
@@ -69,15 +69,15 @@
   (reify
     om/IInitState
     (init-state [_]
-      {:sort? (chan)
+      {:vote (chan)
        :title ""
        :description ""})
 
     om/IWillMount
     (will-mount [_]
-      (let [sort? (om/get-state owner :sort?)]
+      (let [vote (om/get-state owner :vote)
         (go (loop []
-              (let [_ (<! sort?)]
+              (let [_ (<! vote)]
                 (om/transact! app :features
                    (fn [xs] (vec (sort-by :votes (fn [a b] (> a b)) xs))))
                 (recur))))))
