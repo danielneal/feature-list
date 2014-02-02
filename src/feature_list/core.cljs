@@ -9,12 +9,6 @@
 
 (enable-console-print!)
 
-;; -------------------------
-;;     Messaging
-;; -------------------------
-
-(go (def ws (<! (ws-ch "ws://localhost:3000/ws"))))
-
 (defn send-message [ws msg]
   (go (>! ws (pr-str msg))))
 
@@ -25,16 +19,19 @@
 (defn add-feature
   [app owner]
   (let [title (.-value (om/get-node owner "featuretitle"))
-        description (.-value (om/get-node owner "featuredescription"))]
-    (om/transact! app :features conj {:title title :description description :votes 0})
-    (send-message {:message-type :add-feature :feature {:title title :description description :votes 0}})
+        description (.-value (om/get-node owner "featuredescription"))
+        feature {:title title :description description :votes 0}
+        ws (om/get-shared owner :ws)]
+    (send-message ws {:message-type :add-feature :feature feature})
+    (om/transact! app :features conj feature)
     (om/set-state! owner :title "")
     (om/set-state! owner :description "")))
 
 (defn vote-for-feature
-  [feature]
-  (send-message {:message-type :vote :feature @feature})
-  (om/transact! feature :votes inc))
+  [feature owner]
+  (let [ws (om/get-shared owner :ws)]
+    (send-message ws {:message-type :vote :feature @feature})
+    (om/transact! feature :votes inc)))
 
 (defn handle-change
   [e owner k]
@@ -76,6 +73,7 @@
     om/IWillMount
     (will-mount [_]
       (let [vote (om/get-state owner :vote)
+            ws (om/get-shared owner :ws)]
         (go (loop []
               (let [_ (<! vote)]
                 (om/transact! app :features
@@ -99,5 +97,7 @@
 ;; -------------------------
 (def app-state (atom {:features []}))
 
-(om/root app-state features-view (. js/document (getElementById "features")))
+(go (let [ws (<! (ws-ch "ws://localhost:3000/ws"))]
+      (om/root app-state {:ws ws} features-view (. js/document (getElementById "features")))))
+
 
