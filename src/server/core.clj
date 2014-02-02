@@ -54,6 +54,7 @@
 (defn ws-handler [req]
   (with-channel req ws
     (println "Opened connection from" (:remote-addr req))
+    (go (>! ws (pr-str {:message-type :init :state (features-all)})))
     (go-loop []
       (when-let [{:keys [message]} (<! ws)]
         (println "Message received:" message)
