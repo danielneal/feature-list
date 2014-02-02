@@ -15,8 +15,8 @@
 
 (go (def ws (<! (ws-ch "ws://localhost:3000/ws"))))
 
-(defn send-message [message]
-  (go (>! ws message)))
+(defn send-message [ws msg]
+  (go (>! ws (pr-str msg))))
 
 ;; -------------------------
 ;;       Commands
