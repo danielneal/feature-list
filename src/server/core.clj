@@ -18,10 +18,11 @@
 (d/create-database uri)
 (def conn (d/connect uri))
 (d/transact conn (-> "schema.edn" slurp read-string))
+(d/transact conn [{:feature/title "hello" :feature/description "hello" :feature/votes 3 :db/id (d/tempid :db.part/user)}])
+
 (defn hydrate [q]
   (into #{} (map (comp (partial into {}) d/touch (partial d/entity (d/db conn)) first) q)))
 
-(comment (d/transact conn [{:feature/title "hello" :feature/votes 3 :db/id (d/tempid :db.part/user)}])
 (defn features-all []
   (as-> (q '[:find ?e
             :in $
