@@ -37,7 +37,7 @@
 ;; -------------------------------
 (defmulti process-message :message-type)
 
-(defmethod process-message :new-feature [message]
+(defmethod process-message :add-feature [message]
   (println "New feature"))
 
 (defmethod process-message :vote [feature]
