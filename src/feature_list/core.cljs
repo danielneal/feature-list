@@ -95,7 +95,7 @@
                   (dom/button #js {:className "pure-button button-small" :onClick  (fn [e] (.preventDefault e) (add-feature app owner))} "Add feature"))))))
 
 ;; -------------------------
-;;    Build the app 08001079639
+;;    Build the app
 ;; -------------------------
 (def app-state (atom {:features
                       [{:title "Cable Sizes" :description "We like cable sizes" :votes 0}
