@@ -4,6 +4,7 @@
             [om.dom :as dom :include-macros true]
             [chord.client :refer [ws-ch]]
             [cljs.core.async :refer [put! chan <! >! <!! >!!]]
+            [cljs.reader :as reader]
             [clojure.data :as data]
             [clojure.string :as string]))
 
@@ -59,6 +60,17 @@
                  (dom/span #js {:className "title" :onClick toggle-description} (:title feature))
                  (when expanded (dom/span #js {:className "description"} (:description feature)))))))))
 
+(defn listen-to-messages [ws app owner]
+  (go (loop []
+        (let [{message :message} (<! ws)
+              {:keys [message-type] :as message} (reader/read-string message)]
+          (case message-type
+            :init (om/transact! app :features (fn [features] (apply conj features (:state message))))
+          (println message))
+      (recur)))))
+
+
+
 (defn features-view
   "Create a react/om component that will display and manage a sorted list of features, with
   a text box to add new features"
@@ -74,6 +86,7 @@
     (will-mount [_]
       (let [vote (om/get-state owner :vote)
             ws (om/get-shared owner :ws)]
+        (listen-to-messages ws app owner)
         (go (loop []
               (let [_ (<! vote)]
                 (om/transact! app :features
