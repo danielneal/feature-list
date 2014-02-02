@@ -97,9 +97,7 @@
 ;; -------------------------
 ;;    Build the app
 ;; -------------------------
-(def app-state (atom {:features
-                      [{:title "Cable Sizes" :description "We like cable sizes" :votes 0}
-                       {:title "Holiday" :description "We want better holiday support" :votes 0}]}))
+(def app-state (atom {:features []}))
 
 (om/root app-state features-view (. js/document (getElementById "features")))
 
