@@ -3,6 +3,7 @@
   (:require [om.core :as om :include-macros true]
             [om.dom :as dom :include-macros true]
             [chord.client :refer [ws-ch]]
+            [clojure.walk :as walk]
             [cljs.core.async :refer [put! map< map> go-loop chan pub sub <! >!]]
             [cljs.reader :as reader]
             [clojure.data :as data]
@@ -130,7 +131,7 @@
 (def app-state (atom {:features []}))
 
 (go (let [ws (<! (ws-ch "ws://localhost:3000/ws"))
-          client->server (map> pr-str ws)
+          client->server (map> (comp pr-str (partial walk/postwalk om/value)) ws)
           server->client (map< (comp reader/read-string :message) ws)
           client-p (pub server->client :message-type)
           init (chan)
