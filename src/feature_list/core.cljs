@@ -16,20 +16,23 @@
 
 (defn add-feature
   [app owner]
-  (let [title (.-value (om/get-node owner "featuretitle"))
-        description (.-value (om/get-node owner "featuredescription"))
-        feature {:title title :description description :votes 0}
-        ws (om/get-shared owner :ws)]
-    (send-message ws {:message-type :add-feature :feature feature})
-    (om/transact! app :features conj feature)
-    (om/set-state! owner :title "")
-    (om/set-state! owner :description "")))
+  (go (let [id (om/get-shared owner :id)
+           client->server (om/get-shared owner :client->server)
+           title (.-value (om/get-node owner "featuretitle"))
+            description (.-value (om/get-node owner "featuredescription"))
+            _ (put! client->server {:message-type :request-id})
+            {id :id} (<! id)
+            feature {:title title :description description :votes 0 :id id}]
+       (om/transact! app :features conj feature)
+       (om/set-state! owner :title "")
+       (om/set-state! owner :description "")
+       (put! client->server {:message-type :add-feature :feature feature}))))
 
 (defn vote-for-feature
   [feature owner]
-  (let [ws (om/get-shared owner :ws)]
-    (send-message ws {:message-type :vote :feature @feature})
-    (om/transact! feature :votes inc)))
+  (let [client->server (om/get-shared owner :client->server)]
+    (om/transact! feature :votes inc)
+    (put! client->server {:message-type :vote :feature @feature})))
 
 (defn handle-change
   [e owner k]
@@ -46,27 +49,17 @@
     om/IInitState
     (init-state [_]
                 {:expanded false})
+
     om/IRenderState
-    (render-state [this {:keys [vote expanded]}]
-      (letfn [(toggle-description [] (om/set-state! owner :expanded (not expanded)))]
+    (render-state [this {:keys [expanded]}]
+      (let [toggle-description (fn [] (om/set-state! owner :expanded (not expanded)))]
       (dom/li nil
-        (dom/button #js {:className "pure-button button-small" :onClick #(do (vote-for-feature feature owner) (put! vote feature))} "Vote")
+       (dom/button #js {:className "pure-button button-small" :onClick #(vote-for-feature feature owner)} "Vote")
         (dom/span #js {:className "number-of-votes"} (:votes feature))
         (dom/div #js {:className "feature"}
                  (dom/i #js {:className (str "expand fa " (if expanded "fa-caret-down" "fa-caret-right")) :onClick toggle-description})
                  (dom/span #js {:className "title" :onClick toggle-description} (:title feature))
                  (when expanded (dom/span #js {:className "description"} (:description feature)))))))))
-
-(defn listen-to-messages [ws app owner]
-  (go (loop []
-        (let [{message :message} (<! ws)
-              {:keys [message-type] :as message} (reader/read-string message)]
-          (case message-type
-            :init (om/transact! app :features (fn [features] (apply conj features (:state message))))
-          (println message))
-      (recur)))))
-
-
 
 (defn features-view
   "Create a react/om component that will display and manage a sorted list of features, with
@@ -75,19 +68,15 @@
   (reify
     om/IInitState
     (init-state [_]
-      {:vote (chan)
-       :title ""
+      {:title ""
        :description ""})
 
     om/IWillMount
     (will-mount [_]
-      (let [vote (om/get-state owner :vote)
-            ws (om/get-shared owner :ws)]
-        (listen-to-messages ws app owner)
+      (let [init (om/get-shared owner :init)]
         (go (loop []
-              (let [_ (<! vote)]
-                (om/transact! app :features
-                   (fn [xs] (vec (sort-by :votes (fn [a b] (> a b)) xs))))
+              (when-let [{state :state} (<! init)]
+                (om/transact! app :features (fn [features] (apply conj features state)))
                 (recur))))))
 
     om/IRenderState
@@ -107,7 +96,16 @@
 ;; -------------------------
 (def app-state (atom {:features []}))
 
-(go (let [ws (<! (ws-ch "ws://localhost:3000/ws"))]
-      (om/root app-state {:ws ws} features-view (. js/document (getElementById "features")))))
-
+(go (let [ws (<! (ws-ch "ws://localhost:3000/ws"))
+          client->server (map> pr-str ws)
+          server->client (map< (comp reader/read-string :message) ws)
+          client-p (pub server->client :message-type)
+          init (chan)
+          id (chan)]
+      (sub client-p :init init)
+      (sub client-p :id id)
+      (om/root app-state {:init init
+                          :id id
+                          :client->server client->server}
+               features-view (. js/document (getElementById "features")))))
 
