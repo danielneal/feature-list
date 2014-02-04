@@ -45,32 +45,48 @@
                       :feature/id :id})))
 
 ;; -------------------------------
-;;     Message handling
+;;  Message handling
 ;; -------------------------------
-(defmulti process-message :message-type)
 
-(defmethod process-message :add-feature [message]
-  (println "New feature"))
+(defn process-add-feature [c]
+  (go-loop []
+           (when-let [{{title :title description :description id :id} :feature} (<! c)]
+             (d/transact conn [{:feature/title title :feature/description description :feature/id id :feature/votes 0 :db/id (d/tempid :db.part/user)}])
+             (recur))))
 
-(defmethod process-message :vote [feature]
-  (println "Vote for feature"))
+(defn process-vote [c]
+  (go-loop []
+           (when-let [{{id :id votes :votes :as message} :feature} (<! c)]
+             (when-let [eid (ffirst (q '[:find ?e :in $ ?id :where [?e :feature/id ?id]] (d/db conn) id))]
+               (d/transact conn [{:db/id eid :feature/votes votes}]))
+             (recur))))
 
-(defmethod process-message :default [msg]
-  (println msg))
+(defn process-id-requests [c server->client]
+  (go-loop []
+             (when-let [_ (<! c)]
+               (put! server->client {:message-type :id :id (d/squuid)})
+               (recur))))
 
 ;; -------------------------------
-;;      Web socket
+;; Web socket
 ;; -------------------------------
 
 (defn ws-handler [req]
   (with-channel req ws
-    (println "Opened connection from" (:remote-addr req))
-    (go (>! ws (pr-str {:message-type :init :state (features-all)})))
-    (go-loop []
-      (when-let [{:keys [message]} (<! ws)]
-        (println "Message received:" message)
-        (process-message (clojure.edn/read-string message))
-        (recur)))))
+    (let [client->server (map< (comp clojure.edn/read-string :message) ws)
+          server->client (map> pr-str ws)
+          server-p (pub client->server :message-type)
+          id-request (chan)
+          add-feature (chan)
+          vote (chan)]
+      (println "Opened connection from" (:remote-addr req))
+      (put! server->client {:message-type :init :state (features-all)})
+      (sub server-p :request-id id-request)
+      (sub server-p :add-feature add-feature)
+      (sub server-p :vote vote)
+      (process-id-requests id-request server->client)
+      (process-add-feature add-feature)
+      (process-vote vote))))
 
 ;; -------------------------------
 ;;     routes
