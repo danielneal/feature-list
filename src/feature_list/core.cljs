@@ -90,9 +90,9 @@
        (dom/button #js {:className "pure-button button-small" :onClick #(vote-for-feature feature owner)} "Vote")
         (dom/span #js {:className "number-of-votes"} (:votes feature))
         (dom/div #js {:className "feature"}
-                 (dom/i #js {:className (str "expand fa " (if expanded "fa-caret-down" "fa-caret-right")) :onClick toggle-description})
-                 (dom/span #js {:className "title" :onClick toggle-description} (:title feature))
-                 (when expanded (dom/span #js {:className "description"} (:description feature)))))))))
+                 (dom/i #js {:className (classes "expand fa " (if expanded "fa-caret-down" "fa-caret-right")) :onClick toggle-description})
+                 (om/build editable (:title feature) {:opts {:class "title"}})
+                 (when expanded (om/build editable (:description feature) {:opts {:class "description"}}))))))))
 
 (defn features-view
   "Create a react/om component that will display and manage a sorted list of features, with
