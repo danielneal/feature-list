@@ -47,6 +47,33 @@
 ;;       Om Components
 ;; -------------------------
 
+(extend-type js/String
+           ICloneable
+           (-clone [s] (js/String. s))
+           om/IValue
+           (-value [s] (str s)))
+
+(defn editable
+  "An editable piece of text"
+  [text owner {class :class}]
+  (reify
+    om/IInitState
+    (init-state [_]
+                {:editing false})
+    om/IRenderState
+    (render-state [_ {:keys [editing]}]
+                  (letfn [(start-editing [e] (om/set-state! owner :editing true))
+                          (handle-change [e text owner] (om/transact! text (fn [_] (.. e -target -value))))
+                          (commit-change [text owner] (om/set-state! owner :editing false))]
+                    (if editing
+                      (dom/input #js {:onBlur #(commit-change text owner)
+                                      :onChange #(handle-change % text owner)
+                                      :value (om/value text)
+                                      :onKeyPress #(when (== (.-keyCode %) 13) (commit-change text owner))
+                                      :className class})
+                      (dom/span #js {:onClick #(start-editing %)
+                                     :className (classes "clickable" class)}
+                                (om/value text)))))))
 (defn feature-view
   "Create a react/om component that will display a single feature"
   [feature owner]
