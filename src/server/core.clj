@@ -89,7 +89,7 @@
       (process-vote vote))))
 
 ;; -------------------------------
-;;     routes
+;; Routes
 ;; -------------------------------
 (defroutes app-routes
   (GET "/ws" [] ws-handler)
