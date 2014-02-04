@@ -11,17 +11,28 @@
    [clojure.set :as set]))
 
 ;; -------------------------------
-;;  Persistence
+;;  Database Setup
 ;; -------------------------------
 
 (def uri "datomic:mem://feature-list")
 (d/create-database uri)
 (def conn (d/connect uri))
 (d/transact conn (-> "schema.edn" slurp read-string))
-(d/transact conn [{:feature/title "hello" :feature/description "hello" :feature/votes 3 :db/id (d/tempid :db.part/user)}])
 
+;; -------------------------------
+;;  Database helpers
+;; -------------------------------
 (defn hydrate [q]
-  (into #{} (map (comp (partial into {}) d/touch (partial d/entity (d/db conn)) first) q)))
+  (->> q
+       (map first)
+       (map (partial d/entity (d/db conn)))
+       (map d/touch)
+       (map (partial into {}))
+       (into #{})))
+
+;; -------------------------------
+;;  Queries
+;; -------------------------------
 
 (defn features-all []
   (as-> (q '[:find ?e
