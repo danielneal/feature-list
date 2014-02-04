@@ -40,9 +40,9 @@
             :where [?e :feature/title ?f]] (d/db conn)) q
        (hydrate q)
        (set/rename q {:feature/votes :votes
-                    :feature/title :title
-                    :feature/description :description})))
-
+                      :feature/title :title
+                      :feature/description :description
+                      :feature/id :id})))
 
 ;; -------------------------------
 ;;     Message handling
