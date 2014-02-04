@@ -10,9 +10,6 @@
 
 (enable-console-print!)
 
-(defn send-message [ws msg]
-  (go (>! ws (pr-str msg))))
-
 ;; -------------------------
 ;;       Commands
 ;; -------------------------
