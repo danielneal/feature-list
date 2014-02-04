@@ -55,24 +55,46 @@
            om/IValue
            (-value [s] (str s)))
 
+(defn focus-input
+  "An input that focuses itself when it appears"
+  [text owner]
+  (reify
+    om/IDidMount
+    (did-mount [this node]
+               (.focus node))
+
+    om/IRenderState
+    (render-state [this {:keys [class commit]}]
+            (let [handle-change (fn [e text owner] (om/transact! text (fn [_] (.. e -target -value))))
+                  commit-change (fn [] (put! commit true))]
+              (dom/input #js {:onBlur commit-change
+                              :onChange #(handle-change % text owner)
+                              :value (om/value text)
+                              :className class
+                              :onKeyPress #(when (== (.-keyCode %) 13) (commit-change))})))))
+
 (defn editable
-  "An editable piece of text"
-  [text owner {class :class}]
+  "An editable piece of text, uses focus-input"
+  [text owner]
   (reify
     om/IInitState
     (init-state [_]
-                {:editing false})
+                {:editing false
+                 :commit (chan)})
+
+    om/IWillMount
+    (will-mount [_]
+                (let [commit (om/get-state owner :commit)]
+                  (go-loop []
+                           (when-let [_ (<! commit)]
+                             (om/set-state! owner :editing false)
+                             (recur)))))
+
     om/IRenderState
-    (render-state [_ {:keys [editing]}]
-                  (letfn [(start-editing [e] (om/set-state! owner :editing true))
-                          (handle-change [e text owner] (om/transact! text (fn [_] (.. e -target -value))))
-                          (commit-change [text owner] (om/set-state! owner :editing false))]
+    (render-state [_ {:keys [editing class commit] :as state}]
+                  (letfn [(start-editing [e] (om/set-state! owner :editing true))]
                     (if editing
-                      (dom/input #js {:onBlur #(commit-change text owner)
-                                      :onChange #(handle-change % text owner)
-                                      :value (om/value text)
-                                      :onKeyPress #(when (== (.-keyCode %) 13) (commit-change text owner))
-                                      :className class})
+                      (om/build focus-input text {:init-state {:class class :commit commit}})
                       (dom/span #js {:onClick #(start-editing %)
                                      :className (classes "clickable" class)}
                                 (om/value text)))))))
