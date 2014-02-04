@@ -15,7 +15,9 @@ li {
 .number-of-votes {
   font-size: 200%;
   font-weight:bold;
-  margin:5px;
+  width:35px;
+  display:inline-block;
+  text-align:center;
   vertical-align:top;
 }
 
@@ -30,15 +32,23 @@ li {
   cursor:pointer;
 }
 
+.clickable {
+  cursor:pointer;
+  padding:3px;
+}
+.clickable:hover {
+  background: #bba;
+  padding:3px;
+}
+
 .feature .title {
   font-weight:bold;
   margin:5px;
-  cursor:pointer;
 }
 
 .feature .description {
-  display:block;
   margin:5px;
+  display:block;
 }
 
 form {
