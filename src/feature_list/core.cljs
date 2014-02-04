@@ -1,10 +1,10 @@
 (ns feature-list.core
-  (:require-macros [cljs.core.async.macros :refer [go]])
+  (:require-macros [cljs.core.async.macros :refer [go go-loop]])
   (:require [om.core :as om :include-macros true]
             [om.dom :as dom :include-macros true]
             [chord.client :refer [ws-ch]]
             [clojure.walk :as walk]
-            [cljs.core.async :refer [put! map< map> go-loop chan pub sub <! >!]]
+            [cljs.core.async :refer [put! map< map> chan pub sub <! >!]]
             [cljs.reader :as reader]
             [clojure.data :as data]
             [clojure.string :as string]))
