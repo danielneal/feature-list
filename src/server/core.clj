@@ -99,7 +99,11 @@
   (-> app-routes
       api))
 
-(def stop-server (run-server #'webapp {:port 3000}))
+(def server (atom nil))
 
+(defn start-server []
+  (reset! server (run-server #'webapp {:port 3000})))
 
+(defn stop-server []
+  (@server))
 
