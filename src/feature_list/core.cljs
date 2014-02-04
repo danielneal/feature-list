@@ -34,9 +34,6 @@
     (om/transact! feature :votes inc)
     (put! client->server {:message-type :vote :feature @feature})))
 
-(defn handle-change
-  [e owner k]
-  (om/set-state! owner k (.. e -target -value)))
 
 ;; -------------------------
 ;;       Om Components
@@ -81,15 +78,16 @@
 
     om/IRenderState
     (render-state [this state]
-      (dom/div #js {:className "page-container"}
-        (dom/h1 nil "Feature list")
-        (apply dom/ul nil
-          (om/build-all feature-view (:features app)
-            {:init-state state}))
-        (dom/form #js {:className "pure-form"}
-                  (dom/input #js {:type "text" :placeholder "feature title" :ref "featuretitle" :value (:title state) :onChange #(handle-change % owner :title)})
-                  (dom/input #js {:type "text" :placeholder "feature description" :ref "featuredescription" :value (:description state) :onChange #(handle-change % owner :description)})
-                  (dom/button #js {:className "pure-button button-small" :onClick  (fn [e] (.preventDefault e) (add-feature app owner))} "Add feature"))))))
+                  (letfn [(handle-change [e owner k] (om/set-state! owner k (.. e -target -value)))]
+                    (dom/div #js {:className "page-container"}
+                             (dom/h1 nil "Feature list")
+                             (apply dom/ul nil
+                                    (om/build-all feature-view (:features app) {:init-state state}))
+                             (om/build votes-view (:votes app))
+                             (dom/form #js {:className "pure-form"}
+                                       (dom/input #js {:type "text" :placeholder "feature title" :ref "featuretitle" :value (:title state) :onChange #(handle-change % owner :title)})
+                                       (dom/input #js {:type "text" :placeholder "feature description" :ref "featuredescription" :value (:description state) :onChange #(handle-change % owner :description)})
+                                       (dom/button #js {:className "pure-button button-small" :onClick  (fn [e] (.preventDefault e) (add-feature app owner))} "Add feature")))))))
 
 ;; -------------------------
 ;;    Build the app
