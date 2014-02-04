@@ -34,6 +34,14 @@
     (om/transact! feature :votes inc)
     (put! client->server {:message-type :vote :feature @feature})))
 
+;; -------------------------
+;; Helpers
+;; -------------------------
+
+(defn classes
+  "Combine CSS classes into a string"
+  [& classes]
+  (apply str (interpose " " classes)))
 
 ;; -------------------------
 ;;       Om Components
