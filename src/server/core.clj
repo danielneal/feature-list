@@ -16,8 +16,8 @@
 
 (def uri "datomic:mem://feature-list")
 (d/create-database uri)
-(def conn (d/connect uri))
-(d/transact conn (-> "schema.edn" slurp read-string))
+(let [conn (d/connect uri)]
+  (d/transact conn (-> "schema.edn" slurp read-string)))
 
 ;; -------------------------------
 ;;  Database helpers
@@ -34,16 +34,15 @@
 ;;  Queries
 ;; -------------------------------
 
-(defn features-all []
+(defn features-all [db]
   (as-> (q '[:find ?e
             :in $
-            :where [?e :feature/title ?f]] (d/db conn)) q
+            :where [?e :feature/title ?f]] db) q
        (hydrate q)
        (set/rename q {:feature/votes :votes
                       :feature/title :title
                       :feature/description :description
                       :feature/id :id})))
-
 ;; -------------------------------
 ;;  Message handling
 ;; -------------------------------
@@ -80,7 +79,7 @@
           add-feature (chan)
           vote (chan)]
       (println "Opened connection from" (:remote-addr req))
-      (put! server->client {:message-type :init :state (features-all)})
+      (put! server->client {:message-type :init :state (features-all (d/db (d/connect uri)))})
       (sub server-p :request-id id-request)
       (sub server-p :add-feature add-feature)
       (sub server-p :vote vote)
