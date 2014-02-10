@@ -11,30 +11,6 @@
 
 (enable-console-print!)
 
-;; -------------------------
-;;       Commands
-;; -------------------------
-
-(defn add-feature
-  [app owner]
-  (go (let [id (om/get-shared owner :id)
-           client->server (om/get-shared owner :client->server)
-           title (.-value (om/get-node owner "featuretitle"))
-            description (.-value (om/get-node owner "featuredescription"))
-            _ (put! client->server {:message-type :request-id})
-            {id :id} (<! id)
-            feature {:title title :description description :votes 0 :id id}]
-       (om/transact! app :features conj feature)
-       (om/set-state! owner :title "")
-       (om/set-state! owner :description "")
-       (put! client->server {:message-type :add-feature :feature feature}))))
-
-(defn vote-for-feature
-  [feature owner vote]
-  (let [client->server (om/get-shared owner :client->server)]
-    (om/transact! feature :votes inc)
-    (put! client->server {:message-type :vote :feature @feature})
-    (put! vote @feature)))
 
 ;; -------------------------
 ;; Helpers
@@ -55,6 +31,10 @@
            om/IValue
            (-value [s] (str s)))
 
+;; -------------------------
+;; Focus input component
+;; -------------------------
+
 (defn focus-input
   "An input that focuses itself when it appears"
   [text owner]
@@ -72,6 +52,10 @@
                               :value (om/value text)
                               :className class
                               :onKeyPress #(when (== (.-keyCode %) 13) (commit-change))})))))
+
+;; -------------------------
+;; Editable component
+;; -------------------------
 
 (defn editable
   "An editable piece of text, uses focus-input"
@@ -98,6 +82,10 @@
                       (dom/span #js {:onClick #(start-editing %)
                                      :className (classes "clickable" class)}
                                 (om/value text)))))))
+
+;; -------------------------
+;; Votes remaining view
+;; -------------------------
 (defn votes-view
   "Create an indication for how many votes a user has left"
   [votes]
@@ -106,6 +94,17 @@
     (render [this]
             (dom/h1 #js {:className "votes"}
                     (om/value votes)))))
+
+;; -------------------------
+;; Feature view
+;; -------------------------
+
+(defn vote-for-feature
+  [feature owner vote]
+  (let [client->server (om/get-shared owner :client->server)]
+    (om/transact! feature :votes inc)
+    (put! client->server {:message-type :vote :feature @feature})
+    (put! vote @feature)))
 
 (defn feature-view
   "Create a react/om component that will display a single feature"
@@ -125,6 +124,28 @@
                  (dom/i #js {:className (classes "expand fa " (if expanded "fa-caret-down" "fa-caret-right")) :onClick toggle-description})
                  (om/build editable (:title feature) {:init-state {:class "title"}})
                  (when expanded (om/build editable (:description feature) {:init-state {:class "description"}}))))))))
+
+;; -------------------------
+;; Add new feature view
+;; -------------------------
+
+(defn add-feature
+  [app owner]
+  (go (let [id (om/get-shared owner :id)
+           client->server (om/get-shared owner :client->server)
+           title (.-value (om/get-node owner "featuretitle"))
+            description (.-value (om/get-node owner "featuredescription"))
+            _ (put! client->server {:message-type :request-id})
+            {id :id} (<! id)
+            feature {:title title :description description :votes 0 :id id}]
+       (om/transact! app :features conj feature)
+       (om/set-state! owner :title "")
+       (om/set-state! owner :description "")
+       (put! client->server {:message-type :add-feature :feature feature}))))
+
+;; -------------------------
+;; Feature list view
+;; -------------------------
 
 (defn features-view
   "Create a react/om component that will display and manage a sorted list of features, with
@@ -163,6 +184,8 @@
                                        (dom/input #js {:type "text" :placeholder "feature title" :ref "featuretitle" :value (:title state) :onChange #(handle-change % owner :title)})
                                        (dom/input #js {:type "text" :placeholder "feature description" :ref "featuredescription" :value (:description state) :onChange #(handle-change % owner :description)})
                                        (dom/button #js {:className "pure-button button-small" :onClick  (fn [e] (.preventDefault e) (add-feature app owner))} "Add feature")))))))
+
+
 
 ;; -------------------------
 ;;    Build the app
