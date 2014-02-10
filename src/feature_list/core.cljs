@@ -1,10 +1,11 @@
 (ns feature-list.core
-  (:require-macros [cljs.core.async.macros :refer [go go-loop]])
+  (:require-macros [cljs.core.async.macros :refer [go go-loop]]
+                   [feature-list.eavesdrop :refer [eavesdrop]])
   (:require [om.core :as om :include-macros true]
             [om.dom :as dom :include-macros true]
             [chord.client :refer [ws-ch]]
             [clojure.walk :as walk]
-            [cljs.core.async :refer [put! map< map> chan pub sub <! >!]]
+            [cljs.core.async :refer [put! map< map> chan tap untap mult muxch* pub sub <! >!]]
             [cljs.reader :as reader]
             [clojure.data :as data]
             [clojure.string :as string]))
@@ -37,16 +38,16 @@
 
 (defn focus-input
   "An input that focuses itself when it appears"
-  [text owner]
+  [text owner {:keys [commit] :as opts}]
   (reify
     om/IDidMount
     (did-mount [this node]
                (.focus node))
 
     om/IRenderState
-    (render-state [this {:keys [class commit]}]
+    (render-state [this {:keys [class]}]
             (let [handle-change (fn [e text owner] (om/transact! text (fn [_] (.. e -target -value))))
-                  commit-change (fn [] (put! commit true))]
+                  commit-change (fn [] (put! (muxch* commit) true))]
               (dom/input #js {:onBlur commit-change
                               :onChange #(handle-change % text owner)
                               :value (om/value text)
@@ -58,27 +59,28 @@
 ;; -------------------------
 
 (defn editable
-  "An editable piece of text, uses focus-input"
-  [text owner]
+  "An editable piece of text, uses focus-input.
+  Takes a mult which will receive commit messages when editing is finished"
+  [text owner {:keys [commit class] :as opts}]
   (reify
     om/IInitState
     (init-state [_]
-                {:editing false
-                 :commit (chan)})
+                {:editing false})
 
     om/IWillMount
     (will-mount [_]
-                (let [commit (om/get-state owner :commit)]
-                  (go-loop []
-                           (when-let [_ (<! commit)]
-                             (om/set-state! owner :editing false)
-                             (recur)))))
+                (eavesdrop commit
+                           (go-loop []
+                                    (when-let [_ (<! commit)]
+                                      (println "hello")
+                                      (om/set-state! owner :editing false)
+                                      (recur)))))
 
     om/IRenderState
-    (render-state [_ {:keys [editing class commit] :as state}]
+    (render-state [_ {:keys [editing] :as state}]
                   (letfn [(start-editing [e] (om/set-state! owner :editing true))]
                     (if editing
-                      (om/build focus-input text {:init-state {:class class :commit commit}})
+                      (om/build focus-input text {:opts {:class class :commit commit}})
                       (dom/span #js {:onClick #(start-editing %)
                                      :className (classes "clickable" class)}
                                 (om/value text)))))))
@@ -86,6 +88,7 @@
 ;; -------------------------
 ;; Votes remaining view
 ;; -------------------------
+
 (defn votes-view
   "Create an indication for how many votes a user has left"
   [votes]
@@ -122,8 +125,8 @@
         (dom/span #js {:className "number-of-votes"} (:votes feature))
         (dom/div #js {:className "feature"}
                  (dom/i #js {:className (classes "expand fa " (if expanded "fa-caret-down" "fa-caret-right")) :onClick toggle-description})
-                 (om/build editable (:title feature) {:init-state {:class "title"}})
-                 (when expanded (om/build editable (:description feature) {:init-state {:class "description"}}))))))))
+                 (om/build editable (:title feature) {:opts {:class "title" :commit (mult (chan))}})
+                 (when expanded (om/build editable (:description feature) {:opts {:class "description" :commit (mult (chan))}}))))))))
 
 ;; -------------------------
 ;; Add new feature view
@@ -162,10 +165,12 @@
     (will-mount [_]
       (let [init (om/get-shared owner :init)
             vote (om/get-state owner :vote)]
+
         (go-loop []
               (when-let [{state :state} (<! init)]
                 (om/transact! app :features (fn [features] (apply conj features state)))
                 (recur)))
+
         (go-loop []
               (when-let [{feature :feature} (<! vote)]
                 (om/transact! app :features (fn [features] (into [] (sort-by :votes (fn [a b] (> a b)) features))))
