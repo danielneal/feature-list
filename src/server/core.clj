@@ -76,7 +76,7 @@
 ;; Web socket
 ;; -------------------------------
 
-(defn ws-handler [req]
+(defn ws-handler [client-id req]
   (with-channel req ws
     (let [client->server (map< (comp clojure.edn/read-string :message) ws)
           server->client (map> pr-str ws)
@@ -84,7 +84,7 @@
           id-request (chan)
           add-feature (chan)
           vote (chan)]
-      (println "Opened connection from" (:remote-addr req))
+      (println "Opened connection from " (:remote-addr req) ", client-id " client-id)
       (put! server->client {:message-type :init :state (features-all (d/db (d/connect uri)))})
       (sub server-p :request-id id-request)
       (sub server-p :add-feature add-feature)
@@ -97,7 +97,7 @@
 ;; Routes
 ;; -------------------------------
 (defroutes app-routes
-  (GET "/ws" [] ws-handler)
+  (GET "/ws/:client-id" [client-id :as req] (ws-handler client-id req))
   (files "/" {:root nil}))
 
 (def webapp
@@ -111,5 +111,6 @@
 
 (defn stop-server []
   (@server))
+
 
 

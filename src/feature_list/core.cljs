@@ -46,9 +46,8 @@
 
     om/IDidUpdate
     (did-update [_ prev-props prev-state root-node]
-                (if (om/get-state owner :editing)
-                  (.focus root-node)
-                  (println "not editing")))
+                (when (om/get-state owner :editing)
+                  (.focus root-node)))
 
     om/IRenderState
     (render-state [_ {:keys [editing] :as state}]
@@ -58,13 +57,11 @@
                         commit-change (fn []  (om/set-state! owner :editing false)
                                         (put! bus (msg-fn (om/value text))))]
                     (if editing
-                      (let [x  (dom/input #js {:onBlur commit-change
+                      (dom/input #js {:onBlur commit-change
                                             :onChange #(handle-change % text owner)
                                             :value (om/value text)
                                             :className class
-                                            :onKeyPress #(when (== (.-keyCode %) 13) (commit-change))})]
-                        (println (type x))
-                        x)
+                                            :onKeyPress #(when (== (.-keyCode %) 13) (commit-change))})
                       (dom/span #js {:onClick #(start-editing %)
                                      :className (classes "clickable" class)}
                                 (om/value text)))))))
@@ -179,12 +176,11 @@
 ;; -------------------------
 ;;    Build the app
 ;; -------------------------
-
 (def app-state (atom {:features []
                       :votes-remaining 10}))
 
-(go (let [ws (<! (ws-ch "ws://localhost:3000/ws"))
-          client-id (uuid/make-random)
+(go (let [client-id (uuid/make-random)
+          ws (<! (ws-ch (str "ws://localhost:3000/ws/" (.-uuid client-id))))
           bus (bus ws :message-type
                    :outbound-transform #(pr-str (merge {:client-id client-id} (walk/postwalk om/value %)))
                    :inbound-transform #(reader/read-string (:message %)))]
