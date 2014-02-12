@@ -57,16 +57,16 @@
 
 (defmethod process-message :update-feature [m ch]
   (let [conn (d/connect uri)
-        {{id :feature/id attribute :attribute} :identifier text :text} m]
+        {feature :feature} m]
     (println m)
-    (d/transact conn [{attribute text :feature/id id :db/id (d/tempid :db.part/user)}])))
+    (d/transact conn [(merge feature {:db/id (d/tempid :db.part/user)})])))
 
 (defmethod process-message :vote [m ch]
   (let [conn (d/connect uri)
         db (d/db conn)
         {{id :feature/id votes :feature/votes :as message} :feature} m]
     (println m)
-    (d/transact conn [{:feature/id id :feature/votes (inc votes) :db/id (d/tempid :db.part/user)}])))
+    (d/transact conn [{:feature/id id :feature/votes votes :db/id (d/tempid :db.part/user)}])))
 
 (defmethod process-message :request-id [m ch]
   (println m)

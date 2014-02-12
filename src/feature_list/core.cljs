@@ -37,23 +37,11 @@
 
 (defn editable
   "An editable piece of text"
-  [text owner {:keys [class message-type identifier] :as opts}]
+  [text owner {:keys [class on-commit type identifier] :as opts}]
   (reify
     om/IInitState
     (init-state [_]
                 {:editing false})
-
-    om/IWillMount
-    (will-mount [_]
-                (let [bus (om/get-shared owner :bus)
-                      update (chan)]
-                  (sub bus message-type update)
-                  (go-loop []
-                           (when-let [m (<! update)]
-                             (println m)
-                             (when (= (:identifier m) identifier)
-                               #_(om/transact! text (fn [_] (:text update))))
-                             (recur)))))
 
     om/IDidUpdate
     (did-update [_ prev-props prev-state root-node]
@@ -65,9 +53,7 @@
                   (let [bus (om/get-shared owner :bus)
                         start-editing (fn [e] (om/set-state! owner :editing true))
                         handle-change (fn [e text owner] (om/transact! text (fn [_] (.. e -target -value))))
-                        commit-change (fn []
-                                        (om/set-state! owner :editing false)
-                                        (put! bus {:message-type message-type :identifier identifier :text (om/value text)}))]
+                        commit-change (fn [] (om/set-state! owner :editing false) (on-commit))]
                     (if editing
                       (dom/input #js {:onBlur commit-change
                                       :onChange #(handle-change % text owner)
@@ -94,6 +80,10 @@
 ;; -------------------------
 ;; Feature view
 ;; -------------------------
+(defn vote-for-feature [feature owner]
+  (let [bus (om/get-shared owner :bus)]
+    (om/transact! feature :feature/votes inc)
+    (put! bus {:message-type :vote :feature @feature})))
 
 (defn feature-view
   "Create a react/om component that will display a single feature"
@@ -103,28 +93,17 @@
     (init-state [_]
                 {:expanded false})
 
-    om/IWillMount
-    (will-mount [_]
-                (let [bus (om/get-shared owner :bus)
-                      vote (chan)]
-                  (sub bus :vote vote)
-                  (go-loop []
-                           (when-let [{{id :feature/id} :feature} (<! vote)]
-                             (when (= id (:feature/id @feature))
-                               (om/transact! feature :feature/votes inc))
-                             (recur)))))
-
     om/IRenderState
     (render-state [this {:keys [expanded vote]}]
       (let [toggle-description (fn [] (om/set-state! owner :expanded (not expanded)))
             bus (om/get-shared owner :bus)]
       (dom/li nil
-       (dom/button #js {:className "pure-button button-small" :onClick #(put! bus {:message-type :vote :feature feature})} "Vote")
+       (dom/button #js {:className "pure-button button-small" :onClick #(vote-for-feature feature owner)} "Vote")
         (dom/span #js {:className "number-of-votes"} (:feature/votes feature))
         (dom/div #js {:className "feature"}
                  (dom/i #js {:className (classes "expand fa " (if expanded "fa-caret-down" "fa-caret-right")) :onClick toggle-description})
-                 (om/build editable (:feature/title feature) {:opts {:class "title" :message-type :update-feature :identifier {:attribute :feature/title :feature/id (:feature/id feature)}}})
-                 (when expanded (om/build editable (:feature/description feature) {:opts {:class "description" :message-type :update-feature-description :identifier {:attribute :feature/description :feature/id (:feature/id feature)}}}))))))))
+                 (om/build editable (:feature/title feature) {:opts {:class "title" :on-commit #(put! bus {:message-type :update-feature :feature @feature})}})
+                 (when expanded (om/build editable (:feature/description feature) {:opts {:class "description" :on-commit #(put! bus {:message-type :update-feature :feature @feature})}}))))))))
 
 ;; -------------------------
 ;; Add new feature view
@@ -164,9 +143,11 @@
     (will-mount [_]
       (let [bus (om/get-shared owner :bus)
             vote (chan)
-            init (chan)]
+            init (chan)
+            update (chan)]
         (sub bus :init init)
         (sub bus :vote vote)
+        (sub bus :update-feature update)
         (put! bus {:message-type :request-features})
 
         (go-loop []
@@ -176,9 +157,18 @@
 
         (go-loop []
               (when-let [{feature :feature} (<! vote)]
-                (om/transact! app :features (fn [features] (into [] (sort-by :feature/votes (fn [a b] (> a b)) features))))
-                (om/transact! app :feature/votes-remaining dec)
-                (recur)))))
+                (om/transact! app :features (fn [features]
+                                              (->> features
+                                                   (map #(if (= (:feature/id %) (:feature/id feature)) (update-in % [:feature/votes] inc) %))
+                                                   (sort-by :feature/votes (fn [a b] (> a b)))
+                                                   (into []))))
+                (om/transact! app :votes-remaining dec)
+                (recur)))
+
+        (go-loop []
+                 (when-let [{feature :feature} (<! update)]
+                   (om/transact! app :features (fn [features] (mapv #(if (= (:feature/id %) (:feature/id feature)) feature %) features)))
+                   (recur)))))
 
     om/IRenderState
     (render-state [this state]
@@ -187,7 +177,7 @@
                              (dom/h1 nil "Feature list")
                              (apply dom/ul nil
                                     (om/build-all feature-view (:features app) {:init-state state}))
-                             (om/build votes-view (:feature/votes-remaining app))
+                             (om/build votes-view (:votes-remaining app))
                              (dom/form #js {:className "pure-form"}
                                        (dom/input #js {:type "text" :placeholder "feature title" :ref "featuretitle" :value (:feature/title state) :onChange #(handle-change % owner :feature/title)})
                                        (dom/input #js {:type "text" :placeholder "feature description" :ref "featuredescription" :value (:feature/description state) :onChange #(handle-change % owner :feature/description)})
@@ -197,7 +187,7 @@
 ;;    Build the app
 ;; -------------------------
 (def app-state (atom {:features []
-                      :feature/votes-remaining 10}))
+                      :votes-remaining 10}))
 
 (go (let [client-id (.-uuid (uuid/make-random))
           ws (<! (ws-ch (str "ws://localhost:3000/ws/" client-id)))
