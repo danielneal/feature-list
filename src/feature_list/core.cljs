@@ -95,11 +95,10 @@
 ;; -------------------------
 
 (defn vote-for-feature
-  [feature owner vote]
+  [feature owner]
   (let [bus (om/get-shared owner :bus)]
     (om/transact! feature :votes inc)
-    (put! bus {:message-type :vote :feature @feature})
-    (put! vote @feature)))
+    (put! bus {:message-type :vote :feature @feature})))
 
 (defn feature-view
   "Create a react/om component that will display a single feature"
@@ -113,7 +112,7 @@
     (render-state [this {:keys [expanded vote]}]
       (let [toggle-description (fn [] (om/set-state! owner :expanded (not expanded)))]
       (dom/li nil
-       (dom/button #js {:className "pure-button button-small" :onClick #(vote-for-feature feature owner vote)} "Vote")
+       (dom/button #js {:className "pure-button button-small" :onClick #(vote-for-feature feature owner)} "Vote")
         (dom/span #js {:className "number-of-votes"} (:votes feature))
         (dom/div #js {:className "feature"}
                  (dom/i #js {:className (classes "expand fa " (if expanded "fa-caret-down" "fa-caret-right")) :onClick toggle-description})
@@ -152,15 +151,15 @@
     om/IInitState
     (init-state [_]
       {:title ""
-       :description ""
-       :vote (chan)})
+       :description ""})
 
     om/IWillMount
     (will-mount [_]
       (let [bus (om/get-shared owner :bus)
-            vote (om/get-state owner :vote)
+            vote (chan)
             init (chan)]
         (sub bus :init init)
+        (sub bus :vote vote)
         (go-loop []
               (when-let [{state :state} (<! init)]
                 (om/transact! app :features (fn [features] (apply conj features state)))
