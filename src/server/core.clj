@@ -22,6 +22,7 @@
 ;; -------------------------------
 ;;  Database helpers
 ;; -------------------------------
+
 (defn hydrate [q db]
   (->> q
        (map first)
@@ -38,64 +39,76 @@
   (as-> (q '[:find ?e
             :in $
             :where [?e :feature/title ?f]] db) q
-       (hydrate q db)
-       (set/rename q {:feature/votes :votes
-                      :feature/title :title
-                      :feature/description :description
-                      :feature/id :id})))
+       (hydrate q db)))
+
 ;; -------------------------------
 ;;  Message handling
 ;; -------------------------------
 
-(defn process-add-feature [c]
-  (go-loop []
-           (let [conn (d/connect uri)
-                 {{title :title description :description id :id} :feature} (<! c)]
-             (d/transact conn [{:feature/title title :feature/description description :feature/id id :feature/votes 0 :db/id (d/tempid :db.part/user)}])
-             (println "add feature")
-             (when title (recur)))))
+(defmulti process-message (fn [m ch] (:message-type m)))
 
-(defn process-vote [c]
-  (go-loop []
-           (let [conn (d/connect uri)
-                 db (d/db conn)
-                 {{id :id votes :votes :as message} :feature} (<! c)
-                 eid (ffirst (q '[:find ?e :in $ ?id :where [?e :feature/id ?id]] db id))]
-             (println "vote")
-             (d/transact conn [{:db/id eid :feature/votes votes}])
-             (when id (recur)))))
+(defmethod process-message :add-feature [m ch]
+  (let [conn (d/connect uri)
+        {{title :feature/title description :feature/description id :feature/id} :feature} m]
+    (println m)
+    (d/transact conn [{:feature/title title :feature/description description :feature/id id :feature/votes 0 :db/id (d/tempid :db.part/user)}])))
 
-(defn process-id-requests [c server->client]
-  (go-loop []
-           (when-let [m (<! c)]
-             (println m)
-             (put! server->client {:message-type :id :id (d/squuid)})
-             (recur))))
+(defmethod process-message :update-feature [m ch]
+  (let [conn (d/connect uri)
+        {{id :feature/id} :feature attribute :attribute value :value} m]
+    (println m)
+    (d/transact conn [{attribute value :feature/id id :db/id (d/tempid :db.part/user)}])))
+(defmethod process-message :vote [m ch]
+  (let [conn (d/connect uri)
+        db (d/db conn)
+        {{id :feature/id votes :feature/votes :as message} :feature} m]
+    (println m)
+    (d/transact conn [{:feature/id id :feature/votes votes :db/id (d/tempid :db.part/user)}])))
+
+(defmethod process-message :request-id [m ch]
+  (println m)
+  (put! ch {:message-type :id :id (d/squuid)}))
+
+(defmethod process-message :request-features [m ch]
+  (let [conn (d/connect uri)
+        db (d/db conn)]
+    (println m)
+    (put! ch {:message-type :init :features (features-all db)})))
+
+(defmethod process-message :default [m ch]
+  (println "Message type " (:message-type m) " "))
+
 
 ;; -------------------------------
 ;; Web socket
 ;; -------------------------------
 
+(def state (atom {}))
+
 (defn ws-handler [client-id req]
-  (with-channel req ws
-    (let [client->server (map< (comp clojure.edn/read-string :message) ws)
-          server->client (map> pr-str ws)
-          server-p (pub client->server :message-type)
-          id-request (chan)
-          add-feature (chan)
-          vote (chan)]
-      (println "Opened connection from " (:remote-addr req) ", client-id " client-id)
-      (put! server->client {:message-type :init :state (features-all (d/db (d/connect uri)))})
-      (sub server-p :request-id id-request)
-      (sub server-p :add-feature add-feature)
-      (sub server-p :vote vote)
-      (process-id-requests id-request server->client)
-      (process-add-feature add-feature)
-      (process-vote vote))))
+  (let [{aggregator-mix :aggregator-mix
+         aggregator-mult :aggregator-mult}@state]
+    (with-channel req ws
+      (let [inbound (map< (comp clojure.edn/read-string :message) ws)
+            outbound (map> pr-str ws)
+            ch (chan)
+            [process relay] (async/split #(= (:client-id %) client-id) ch)]
+
+        (println "Opened connection from " (:remote-addr req) ", client-id " client-id)
+
+        (async/admix aggregator-mix inbound)
+        (async/tap aggregator-mult ch)
+        (async/pipe relay outbound)
+
+        (go-loop []
+                 (when-let [m (<! process)]
+                   (process-message m outbound)
+                   (recur)))))))
 
 ;; -------------------------------
 ;; Routes
 ;; -------------------------------
+
 (defroutes app-routes
   (GET "/ws/:client-id" [client-id :as req] (ws-handler client-id req))
   (files "/" {:root nil}))
@@ -104,13 +117,16 @@
   (-> app-routes
       api))
 
-(def server (atom nil))
 
-(defn start-server []
-  (reset! server (run-server #'webapp {:port 3000})))
+(defn start []
+  (let [aggregator (chan)]
+    (reset! state {:stop-server (run-server #'webapp {:port 3000})
+                   :aggregator-mix (async/mix aggregator)
+                   :aggregator-mult (async/mult aggregator)})))
 
-(defn stop-server []
-  (@server))
-
+(defn stop []
+  (let [{stop-server :stop-server} @state]
+    (stop-server)
+    (reset! state {})))
 
 
