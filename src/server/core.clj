@@ -22,10 +22,10 @@
 ;; -------------------------------
 ;;  Database helpers
 ;; -------------------------------
-(defn hydrate [q]
+(defn hydrate [q db]
   (->> q
        (map first)
-       (map (partial d/entity (d/db conn)))
+       (map (partial d/entity db))
        (map d/touch)
        (map (partial into {}))
        (into #{})))
@@ -38,7 +38,7 @@
   (as-> (q '[:find ?e
             :in $
             :where [?e :feature/title ?f]] db) q
-       (hydrate q)
+       (hydrate q db)
        (set/rename q {:feature/votes :votes
                       :feature/title :title
                       :feature/description :description
@@ -49,22 +49,28 @@
 
 (defn process-add-feature [c]
   (go-loop []
-           (when-let [{{title :title description :description id :id} :feature} (<! c)]
+           (let [conn (d/connect uri)
+                 {{title :title description :description id :id} :feature} (<! c)]
              (d/transact conn [{:feature/title title :feature/description description :feature/id id :feature/votes 0 :db/id (d/tempid :db.part/user)}])
-             (recur))))
+             (println "add feature")
+             (when title (recur)))))
 
 (defn process-vote [c]
   (go-loop []
-           (when-let [{{id :id votes :votes :as message} :feature} (<! c)]
-             (when-let [eid (ffirst (q '[:find ?e :in $ ?id :where [?e :feature/id ?id]] (d/db conn) id))]
-               (d/transact conn [{:db/id eid :feature/votes votes}]))
-             (recur))))
+           (let [conn (d/connect uri)
+                 db (d/db conn)
+                 {{id :id votes :votes :as message} :feature} (<! c)
+                 eid (ffirst (q '[:find ?e :in $ ?id :where [?e :feature/id ?id]] db id))]
+             (println "vote")
+             (d/transact conn [{:db/id eid :feature/votes votes}])
+             (when id (recur)))))
 
 (defn process-id-requests [c server->client]
   (go-loop []
-             (when-let [_ (<! c)]
-               (put! server->client {:message-type :id :id (d/squuid)})
-               (recur))))
+           (when-let [_ (<! c)]
+             (println "id request")
+             (put! server->client {:message-type :id :id (d/squuid)})
+             (recur))))
 
 ;; -------------------------------
 ;; Web socket
@@ -105,4 +111,5 @@
 
 (defn stop-server []
   (@server))
+
 
