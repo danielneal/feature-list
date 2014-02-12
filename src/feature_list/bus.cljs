@@ -1,11 +1,8 @@
-(ns feature-list.om-bus
+(ns feature-list.bus
   (:require [cljs.core.async :as async :refer [chan pipe pub map> map<]]
-            [cljs.core.async.impl.protocols :as impl]
-            [clojure.walk :as walk]
-            [cljs.reader :as reader]
-            [om.core :as om :include-macros true]))
+            [cljs.core.async.impl.protocols :as impl]))
 
-(defn om-bus
+(defn bus
     "Create a client side 'bus' for Om from a Chord web socket.
 
     This 'bus' can be subscribed to like a pub, but can also be
@@ -26,14 +23,18 @@
          |                      |
          | ws                   |
          x-----------------> server
-          (out)                                                "
+          (out)
 
-    [ws topic-fn]
+    Accepts optional transforms to apply to inbound and outbound
+    messages."
+
+    [ws topic-fn & {outbound-transform :outbound-transform
+                    inbound-transform :inbound-transform}]
     (let [local (chan)
           merged (chan)
           published (pub merged topic-fn)
-          out (map> (comp pr-str (partial walk/postwalk om/value)) ws)
-          in (map< (comp reader/read-string :message) ws)]
+          out (if-not outbound-transform ws (map> outbound-transform ws))
+          in (if-not inbound-transform ws (map< inbound-transform ws))]
 
       (pipe local merged)
       (pipe in merged)

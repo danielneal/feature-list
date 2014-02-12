@@ -67,8 +67,8 @@
 
 (defn process-id-requests [c server->client]
   (go-loop []
-           (when-let [_ (<! c)]
-             (println "id request")
+           (when-let [m (<! c)]
+             (println m)
              (put! server->client {:message-type :id :id (d/squuid)})
              (recur))))
 

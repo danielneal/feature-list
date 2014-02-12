@@ -6,8 +6,11 @@
             [cljs.core.async :refer [put! map< map> chan  pub sub unsub <! >!]]
             [clojure.data :as data]
             [clojure.string :as string]
+            [cljs.reader :as reader]
             [cljs-uuid.core :as uuid]
-            [feature-list.om-bus :refer [om-bus]]))
+            [clojure.walk :as walk]
+            [feature-list.bus :refer [bus]]))
+
 (enable-console-print!)
 
 ;; -------------------------
@@ -181,7 +184,10 @@
                       :votes-remaining 10}))
 
 (go (let [ws (<! (ws-ch "ws://localhost:3000/ws"))
-          bus (om-bus ws :message-type)]
+          client-id (uuid/make-random)
+          bus (bus ws :message-type
+                   :outbound-transform #(pr-str (merge {:client-id client-id} (walk/postwalk om/value %)))
+                   :inbound-transform #(reader/read-string (:message %)))]
       (om/root app-state {:bus bus}
                features-view (. js/document (getElementById "features")))))
 
