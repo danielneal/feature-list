@@ -39,7 +39,9 @@
   (as-> (q '[:find ?e
             :in $
             :where [?e :feature/title ?f]] db) q
-       (hydrate q db)))
+       (hydrate q db)
+       (sort-by :feature/votes q)
+        (reverse q)))
 
 ;; -------------------------------
 ;;  Message handling
@@ -55,9 +57,10 @@
 
 (defmethod process-message :update-feature [m ch]
   (let [conn (d/connect uri)
-        {{id :feature/id} :feature attribute :attribute value :value} m]
+        {{id :feature/id attribute :attribute} :identifier text :text} m]
     (println m)
-    (d/transact conn [{attribute value :feature/id id :db/id (d/tempid :db.part/user)}])))
+    (d/transact conn [{attribute text :feature/id id :db/id (d/tempid :db.part/user)}])))
+
 (defmethod process-message :vote [m ch]
   (let [conn (d/connect uri)
         db (d/db conn)

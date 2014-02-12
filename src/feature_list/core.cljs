@@ -36,12 +36,24 @@
 ;; -------------------------
 
 (defn editable
-  "An editable piece of text, uses focus-input."
-  [text owner {:keys [class msg-fn] :as opts}]
+  "An editable piece of text"
+  [text owner {:keys [class message-type identifier] :as opts}]
   (reify
     om/IInitState
     (init-state [_]
                 {:editing false})
+
+    om/IWillMount
+    (will-mount [_]
+                (let [bus (om/get-shared owner :bus)
+                      update (chan)]
+                  (sub bus message-type update)
+                  (go-loop []
+                           (when-let [m (<! update)]
+                             (println m)
+                             (when (= (:identifier m) identifier)
+                               #_(om/transact! text (fn [_] (:text update))))
+                             (recur)))))
 
     om/IDidUpdate
     (did-update [_ prev-props prev-state root-node]
@@ -53,14 +65,15 @@
                   (let [bus (om/get-shared owner :bus)
                         start-editing (fn [e] (om/set-state! owner :editing true))
                         handle-change (fn [e text owner] (om/transact! text (fn [_] (.. e -target -value))))
-                        commit-change (fn []  (om/set-state! owner :editing false)
-                                        (put! bus (msg-fn (om/value text))))]
+                        commit-change (fn []
+                                        (om/set-state! owner :editing false)
+                                        (put! bus {:message-type message-type :identifier identifier :text (om/value text)}))]
                     (if editing
                       (dom/input #js {:onBlur commit-change
-                                            :onChange #(handle-change % text owner)
-                                            :value (om/value text)
-                                            :className class
-                                            :onKeyPress #(when (== (.-keyCode %) 13) (commit-change))})
+                                      :onChange #(handle-change % text owner)
+                                      :value (om/value text)
+                                      :className class
+                                      :onKeyPress #(when (== (.-keyCode %) 13) (commit-change))})
                       (dom/span #js {:onClick #(start-editing %)
                                      :className (classes "clickable" class)}
                                 (om/value text)))))))
@@ -106,12 +119,12 @@
       (let [toggle-description (fn [] (om/set-state! owner :expanded (not expanded)))
             bus (om/get-shared owner :bus)]
       (dom/li nil
-       (dom/button #js {:className "pure-button button-small" :onClick #(put! bus {:message-type :vote :feature @feature})} "Vote")
+       (dom/button #js {:className "pure-button button-small" :onClick #(put! bus {:message-type :vote :feature feature})} "Vote")
         (dom/span #js {:className "number-of-votes"} (:feature/votes feature))
         (dom/div #js {:className "feature"}
                  (dom/i #js {:className (classes "expand fa " (if expanded "fa-caret-down" "fa-caret-right")) :onClick toggle-description})
-                 (om/build editable (:feature/title feature) {:opts {:class "title" :msg-fn #(-> {:message-type :update-feature :attribute :feature/title :value % :feature @feature})}})
-                 (when expanded (om/build editable (:feature/description feature) {:opts {:class "description" :msg-fn #(-> {:message-type :update-feature :attribute :feature/description :value % :feature @feature})}}))))))))
+                 (om/build editable (:feature/title feature) {:opts {:class "title" :message-type :update-feature :identifier {:attribute :feature/title :feature/id (:feature/id feature)}}})
+                 (when expanded (om/build editable (:feature/description feature) {:opts {:class "description" :message-type :update-feature-description :identifier {:attribute :feature/description :feature/id (:feature/id feature)}}}))))))))
 
 ;; -------------------------
 ;; Add new feature view
