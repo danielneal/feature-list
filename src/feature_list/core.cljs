@@ -12,7 +12,6 @@
             [feature-list.bus :refer [bus]]))
 
 (enable-console-print!)
-
 ;; -------------------------
 ;; Helpers
 ;; -------------------------
@@ -83,12 +82,6 @@
 ;; Feature view
 ;; -------------------------
 
-(defn vote-for-feature
-  [feature owner]
-  (let [bus (om/get-shared owner :bus)]
-    (om/transact! feature :feature/votes inc)
-    (put! bus {:message-type :vote :feature @feature})))
-
 (defn feature-view
   "Create a react/om component that will display a single feature"
   [feature owner]
@@ -97,11 +90,23 @@
     (init-state [_]
                 {:expanded false})
 
+    om/IWillMount
+    (will-mount [_]
+                (let [bus (om/get-shared owner :bus)
+                      vote (chan)]
+                  (sub bus :vote vote)
+                  (go-loop []
+                           (when-let [{{id :feature/id} :feature} (<! vote)]
+                             (when (= id (:feature/id @feature))
+                               (om/transact! feature :feature/votes inc))
+                             (recur)))))
+
     om/IRenderState
     (render-state [this {:keys [expanded vote]}]
-      (let [toggle-description (fn [] (om/set-state! owner :expanded (not expanded)))]
+      (let [toggle-description (fn [] (om/set-state! owner :expanded (not expanded)))
+            bus (om/get-shared owner :bus)]
       (dom/li nil
-       (dom/button #js {:className "pure-button button-small" :onClick #(vote-for-feature feature owner)} "Vote")
+       (dom/button #js {:className "pure-button button-small" :onClick #(put! bus {:message-type :vote :feature @feature})} "Vote")
         (dom/span #js {:className "number-of-votes"} (:feature/votes feature))
         (dom/div #js {:className "feature"}
                  (dom/i #js {:className (classes "expand fa " (if expanded "fa-caret-down" "fa-caret-right")) :onClick toggle-description})
