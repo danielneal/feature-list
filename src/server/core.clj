@@ -66,7 +66,7 @@
         db (d/db conn)
         {{id :feature/id votes :feature/votes :as message} :feature} m]
     (println m)
-    (d/transact conn [{:feature/id id :feature/votes votes :db/id (d/tempid :db.part/user)}])))
+    (d/transact conn [{:feature/id id :feature/votes (inc votes) :db/id (d/tempid :db.part/user)}])))
 
 (defmethod process-message :request-id [m ch]
   (println m)

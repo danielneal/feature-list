@@ -12,6 +12,7 @@
             [feature-list.bus :refer [bus]]))
 
 (enable-console-print!)
+
 ;; -------------------------
 ;; Helpers
 ;; -------------------------
@@ -22,7 +23,7 @@
   (apply str (interpose " " classes)))
 
 ;; -------------------------
-;;       Om Components
+;; Om Components
 ;; -------------------------
 
 (extend-type js/String
@@ -65,7 +66,7 @@
                                 (om/value text)))))))
 
 ;; -------------------------
-;; Votes remaining view
+;; Votes remaining
 ;; -------------------------
 
 (defn votes-view
@@ -78,11 +79,10 @@
                     (om/value votes)))))
 
 ;; -------------------------
-;; Feature view
+;; Feature (single)
 ;; -------------------------
 (defn vote-for-feature [feature owner]
   (let [bus (om/get-shared owner :bus)]
-    (om/transact! feature :feature/votes inc)
     (put! bus {:message-type :vote :feature @feature})))
 
 (defn feature-view
@@ -106,7 +106,7 @@
                  (when expanded (om/build editable (:feature/description feature) {:opts {:class "description" :on-commit #(put! bus {:message-type :update-feature :feature @feature})}}))))))))
 
 ;; -------------------------
-;; Add new feature view
+;; Add new feature
 ;; -------------------------
 
 (defn add-feature
@@ -126,7 +126,7 @@
           (unsub bus :id id-chan)))))
 
 ;; -------------------------
-;; Feature list view
+;; Feature list
 ;; -------------------------
 
 (defn features-view
@@ -145,9 +145,11 @@
             vote (chan)
             init (chan)
             update (chan)]
+
         (sub bus :init init)
         (sub bus :vote vote)
         (sub bus :update-feature update)
+
         (put! bus {:message-type :request-features})
 
         (go-loop []
@@ -186,6 +188,7 @@
 ;; -------------------------
 ;;    Build the app
 ;; -------------------------
+
 (def app-state (atom {:features []
                       :votes-remaining 10}))
 
