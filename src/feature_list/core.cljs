@@ -119,7 +119,6 @@
     (put! bus {:message-type :request-id})
     (go (let [{id :id} (<! id-chan)
               feature {:feature/title title :feature/description description :feature/votes 0 :feature/id id}]
-          (om/transact! app :features conj feature)
           (om/set-state! owner :feature/title "")
           (om/set-state! owner :feature/description "")
           (put! bus {:message-type :add-feature :feature feature})
@@ -144,11 +143,13 @@
       (let [bus (om/get-shared owner :bus)
             vote (chan)
             init (chan)
-            update (chan)]
+            update (chan)
+            add (chan)]
 
         (sub bus :init init)
         (sub bus :vote vote)
         (sub bus :update-feature update)
+        (sub bus :add-feature add)
 
         (put! bus {:message-type :request-features})
 
@@ -170,6 +171,11 @@
         (go-loop []
                  (when-let [{feature :feature} (<! update)]
                    (om/transact! app :features (fn [features] (mapv #(if (= (:feature/id %) (:feature/id feature)) feature %) features)))
+                   (recur)))
+
+        (go-loop []
+                 (when-let [{feature :feature} (<! add)]
+                   (om/transact! app :features conj feature)
                    (recur)))))
 
     om/IRenderState
