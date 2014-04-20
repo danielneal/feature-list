@@ -2,9 +2,10 @@
   (:require
    [ring.util.response :refer [response]]
    [org.httpkit.server :refer [run-server]]
-   [chord.http-kit :refer [with-channel]]
    [clojure.core.async :as async :refer [<! >! map> map< chan pub sub put! go close! go-loop]]
-   [compojure.core :refer [defroutes GET routes]]
+   [taoensso.sente :as sente]
+   [clojure.core.match :refer [match]]
+   [compojure.core :refer [defroutes GET POST routes]]
    [compojure.handler :refer [api]]
    [compojure.route :refer [resources files]]
    [datomic.api :as d :refer [q]]
@@ -16,120 +17,96 @@
 
 (def uri "datomic:mem://feature-list")
 (d/create-database uri)
-(let [conn (d/connect uri)]
-  (d/transact conn (-> "schema.edn" slurp read-string)))
-
-;; -------------------------------
-;;  Database helpers
-;; -------------------------------
-
-(defn hydrate [q db]
-  (->> q
-       (map first)
-       (map (partial d/entity db))
-       (map d/touch)
-       (map (partial into {}))
-       (into #{})))
+(def conn (d/connect uri))
+(d/transact conn (-> "schema.edn" slurp read-string))
 
 ;; -------------------------------
 ;;  Queries
 ;; -------------------------------
 
 (defn features-all [db]
-  (as-> (q '[:find ?e
+  (->> (q '[:find ?e
             :in $
-            :where [?e :feature/title ?f]] db) q
-       (hydrate q db)
-       (sort-by :feature/votes q)
-        (reverse q)))
+            :where [?e :feature/id ?f]] db)
+       (map #(d/touch (d/entity db (first %))))
+       (sort-by :feature/votes)
+       (reverse)
+       (into [])))
 
 ;; -------------------------------
-;;  Message handling
+;; Web socket and event handling
 ;; -------------------------------
 
-(defmulti process-message (fn [m ch] (:message-type m)))
+(let [{:keys [ch-recv send-fn ajax-post-fn ajax-get-or-ws-handshake-fn]}
+      (sente/make-channel-socket! {})]
+  (def ring-ajax-post                ajax-post-fn)
+  (def ring-ajax-get-or-ws-handshake ajax-get-or-ws-handshake-fn)
+  (def ch-chsk                       ch-recv)
+  (def chsk-send!                    send-fn))
 
-(defmethod process-message :add-feature [m ch]
-  (let [conn (d/connect uri)
-        {{title :feature/title description :feature/description id :feature/id} :feature} m]
-    (println m)
-    (d/transact conn [{:feature/title title :feature/description description :feature/id id :feature/votes 0 :db/id (d/tempid :db.part/user)}])))
-
-(defmethod process-message :update-feature [m ch]
-  (let [conn (d/connect uri)
-        {feature :feature} m]
-    (println m)
-    (d/transact conn [(merge feature {:db/id (d/tempid :db.part/user)})])))
-
-(defmethod process-message :vote [m ch]
-  (let [conn (d/connect uri)
-        db (d/db conn)
-        {{id :feature/id votes :feature/votes :as message} :feature} m]
-    (println m)
-    (d/transact conn [{:feature/id id :feature/votes (inc votes) :db/id (d/tempid :db.part/user)}])))
-
-(defmethod process-message :request-id [m ch]
-  (println m)
-  (put! ch {:message-type :id :id (d/squuid)}))
-
-(defmethod process-message :request-features [m ch]
-  (let [conn (d/connect uri)
+(defn event-msg-handler
+  [{:as ev-msg :keys [ring-req event ?reply-fn]} _]
+  (let [session (:session ring-req)
+        uid     (:uid session)
+        [ev-id ev-data :as ev] event
         db (d/db conn)]
-    (println m)
-    (put! ch {:message-type :init :features (features-all db)})))
+    (match [ev-id ev-data]
 
-(defmethod process-message :default [m ch]
-  (println "Message type " (:message-type m) " "))
+           [:feature-list/init _]
+           (do
+             (println "Init")
+             (?reply-fn (features-all db)))
 
+           [:feature-list/add-feature {:feature/title title :feature/description description}]
+           (let [id (d/squuid)
+                 feature {:feature/title title
+                          :feature/description description
+                          :feature/id id
+                          :feature/votes 0}]
+             (println "Add")
+             (d/transact conn [(assoc feature :db/id (d/tempid :db.part/user))])
+             (?reply-fn feature))
 
-;; -------------------------------
-;; Web socket
-;; -------------------------------
+           [:feature-list/vote [id votes]]
+           (let [new-votes (inc votes)]
+             (println "vote")
+             (d/transact conn [{:db/id [:feature/id id] :feature/votes new-votes }])
+             (?reply-fn new-votes))
 
-(def state (atom {}))
+           [:feature-list/update-feature [id k v]]
+           (do
+             (println "update")
+             (println id k v)
+             (d/transact conn [{:db/id [:feature/id id] k v}]))
 
-(defn ws-handler [client-id req]
-  (let [{aggregator-mix :aggregator-mix
-         aggregator-mult :aggregator-mult}@state]
-    (with-channel req ws
-      (let [inbound (map< (comp clojure.edn/read-string :message) ws)
-            outbound (map> pr-str ws)
-            ch (chan)
-            [process relay] (async/split #(= (:client-id %) client-id) ch)]
+           :else
+           (do
+             (when-not (:dummy-reply-fn? (meta ?reply-fn))
+               (?reply-fn (format "Unmatched event, echo: %s" ev)))))))
 
-        (println "Opened connection from " (:remote-addr req) ", client-id " client-id)
-
-        (async/admix aggregator-mix inbound)
-        (async/tap aggregator-mult ch)
-        (async/pipe relay outbound)
-
-        (go-loop []
-                 (when-let [m (<! process)]
-                   (process-message m outbound)
-                   (recur)))))))
+(sente/start-chsk-router-loop! event-msg-handler ch-chsk)
 
 ;; -------------------------------
 ;; Routes
 ;; -------------------------------
 
 (defroutes app-routes
-  (GET "/ws/:client-id" [client-id :as req] (ws-handler client-id req))
+  (GET  "/chsk" req (#'ring-ajax-get-or-ws-handshake req))
+  (POST "/chsk" req (#'ring-ajax-post req))
   (files "/" {:root nil}))
 
 (def webapp
   (-> app-routes
       api))
 
+(def server (atom {}))
 
 (defn start []
-  (let [aggregator (chan)]
-    (reset! state {:stop-server (run-server #'webapp {:port 3000})
-                   :aggregator-mix (async/mix aggregator)
-                   :aggregator-mult (async/mult aggregator)})))
+  (reset! server (run-server #'webapp {:port 3000})))
 
 (defn stop []
-  (let [{stop-server :stop-server} @state]
-    (stop-server)
-    (reset! state {})))
+  (@server)
+  (reset! server {}))
+
 
 
